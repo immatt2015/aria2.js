@@ -33,6 +33,23 @@
     }
   }
 
+  Aria2.prototype._send = function (m) {
+    this.onsend(m)
+
+    var that = this
+
+    // send via websocket
+    if (this.socket && this.socket.readyState === 1) {
+      this.socket.send(JSON.stringify(m))
+    // send via http
+    } else {
+      this.http(m, function (err) { // FIXME WTF is this doing?
+        that.callbacks[m.id](err)
+        delete that.callbacks[m.id]
+      })
+    }
+  }
+
   Aria2.prototype.http = function (m, fn) {
     var opts = {
       'host': this.host,
@@ -72,6 +89,24 @@
     })
   }
 
+  Aria2.prototype.batch = function (requests) {
+    var m = []
+
+    for (var i = 0; i < requests.length; i++) {
+      var id = this.lastId++
+      m.push({
+        'jsonrpc': '2.0',
+        'method': 'aria2.' + requests[i][0],
+        'id':  id
+      })
+      this.callbacks[id] = requests[i][2]
+    }
+
+    console.log(m)
+
+    this.socket.send(JSON.stringify(m))
+  }
+
   Aria2.prototype.send = function (method /* [,param] [,param] [,...] [, fn]*/) {
     var params = Array.prototype.slice.call(arguments, 1)
     var cb = typeof params[params.length - 1] === 'function' ? params.pop() : null
@@ -100,20 +135,9 @@
 
     if (params.length > 0) m.params = params
 
-    this.onsend(m)
+    this._send(m)
 
     var that = this
-
-    // send via websocket
-    if (this.socket && this.socket.readyState === 1) {
-      this.socket.send(JSON.stringify(m))
-    // send via http
-    } else {
-      this.http(m, function (err) {
-        that.callbacks[m.id](err)
-        delete that.callbacks[m.id]
-      })
-    }
 
     return pg(function (done) {
       that.callbacks[m.id] = done
@@ -121,6 +145,13 @@
   }
 
   Aria2.prototype._onmessage = function (m) {
+    var that = this
+    if (Array.isArray(m)) {
+      m.forEach(function (req) {
+        that._onmessage(req)
+      })
+    }
+
     this.onmessage(m)
 
     if (m.id !== undefined) {
