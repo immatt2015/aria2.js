@@ -157,10 +157,11 @@
 
         it('should call the callback of a request when receiving a response', function () {
           var spySend = sinon.spy(client, 'onsend')
-          var callback = sinon.spy()
+          var reject = sinon.spy()
           client.send('foobar', callback)
           var id = spySend.args[0][0].id
-          expect(client.callbacks[id]).to.be.a('function')
+          expect(client.callbacks[id][0]).to.be.a('function')
+          expect(client.callbacks[id][1]).to.be.a('function')
           var message = {'method': 'aria2.foobar', 'id': id}
           client._onmessage(message)
 

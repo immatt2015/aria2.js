@@ -1,10 +1,10 @@
 ;(function (global) {
   'use strict'
 
-  var WebSocket
-  var fetch
+  let WebSocket
+  let fetch
 
-  var isNode = typeof module !== 'undefined' && module.exports
+  const isNode = typeof module !== 'undefined' && module.exports
 
   if (isNode) {
     WebSocket = require('ws')
@@ -14,144 +14,143 @@
     fetch = global.fetch
   }
 
-  var Aria2 = function (opts) {
-    this.callbacks = Object.create(null)
-    this.lastId = 0
+  class Aria2 {
+    constructor (options) {
+      this.callbacks = Object.create(null)
+      this.lastId = 0
 
-    for (var i in Aria2.options) {
-      this[i] = typeof opts === 'object' && i in opts ? opts[i] : Aria2.options[i]
-    }
-  }
-
-  Aria2.prototype.http = function (m) {
-    var that = this
-    var content = {
-      method: m.method,
-      id: m.id
+      Object.assign(this, Aria2.options, options)
     }
 
-    if (Array.isArray(m.params) && m.params.length > 0) {
-      content.params = m.params
-    }
-
-    var url = 'http' + (this.secure ? 's' : '') + '://' + this.host + ':' + this.port + this.path
-    return fetch(url, {
-      method: 'POST',
-      body: JSON.stringify(content),
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      }
-    })
-    .then(function (res) {
-      return res.json()
-    })
-    .then(function (msg) {
-      that._onmessage(msg)
-    })
-  }
-
-  Aria2.prototype.send = function (method /* [,param] [,param] [,...] */) {
-    var params = Array.prototype.slice.call(arguments, 1)
-    return this.exec(method, params)
-  }
-
-  Aria2.prototype.exec = function (method, parameters) {
-    if (typeof method !== 'string') {
-      throw new TypeError(method + ' is not a string')
-    }
-
-    if (method.indexOf('system.') !== 0 && method.indexOf('aria2.') !== 0) {
-      method = 'aria2.' + method
-    }
-
-    var m = {
-      'method': method,
-      'json-rpc': '2.0',
-      'id': this.lastId++
-    }
-
-    var params = this.secret ? ['token:' + this.secret] : []
-    if (Array.isArray(parameters)) {
-      params = params.concat(parameters)
-    }
-
-    if (params.length > 0) m.params = params
-
-    this.onsend(m)
-
-    var that = this
-
-    return new Promise(function (resolve, reject) {
-      // send via websocket
-      if (this.socket && this.socket.readyState === 1) {
-        this.socket.send(JSON.stringify(m))
-      // send via http
-      } else {
-        this.http(m).catch(reject)
+    http (m) {
+      const content = {
+        method: m.method,
+        id: m.id
       }
 
-      that.callbacks[m.id] = [resolve, reject]
-    })
-  }
-
-  Aria2.prototype._onmessage = function (m) {
-    this.onmessage(m)
-
-    if (m.id !== undefined) {
-      var callback = this.callbacks[m.id]
-      if (callback) {
-        if (m.error) {
-          callback[1](m.error)
-        } else {
-          callback[0](m.result)
-        }
-        delete this.callbacks[m.id]
+      if (Array.isArray(m.params) && m.params.length > 0) {
+        content.params = m.params
       }
-    } else if (m.method) {
-      var n = m.method.split('aria2.')[1]
-      if (n.indexOf('on') === 0 && typeof this[n] === 'function' && Aria2.notifications.indexOf(n) > -1) {
-        this[n].apply(this, m.params)
-      }
-    }
-  }
 
-  Aria2.prototype.open = function (fn) {
-    var url = 'ws' + (this.secure ? 's' : '') + '://' + this.host + ':' + this.port + this.path
-    var socket = this.socket = new WebSocket(url)
-    var that = this
-    var called = false
-
-    socket.onclose = function () {
-      that.onclose()
-    }
-    socket.onmessage = function (event) {
-      that._onmessage(JSON.parse(event.data))
-    }
-
-    return new Promise((resolve, reject) => {
-      socket.onopen = function () {
-        resolve()
-        that.onopen()
-      }
-      socket.onerror = function (err) {
-        reject(err)
-      }
-    })
-  }
-
-  Aria2.prototype.close = function (fn) {
-    var socket = this.socket
-    return new Promise(function(resolve, reject) {
-      if (!socket) {
-        resolve()
-      } else {
-        socket.addEventListener('close', function () {
-          resolve()
+      const url = 'http' + (this.secure ? 's' : '') + '://' + this.host + ':' + this.port + this.path
+      return new Promise((resolve, reject) => {
+        this.callbacks[m.id] = [resolve, reject]
+        fetch(url, {
+          method: 'POST',
+          body: JSON.stringify(content),
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
         })
-        socket.close()
+        .then(function (res) {
+          return res.json()
+        })
+        .then(function (msg) {
+          this._onmessage(msg)
+        })
+        .catch(reject)
+      })
+    }
+
+    send (method, ...params) {
+      const params = Array.prototype.slice.call(arguments, 1)
+      return this.exec(method, ...params)
+    }
+
+    exec (method, parameters) {
+      if (typeof method !== 'string') {
+        throw new TypeError(method + ' is not a string')
       }
-    })
+
+      if (method.indexOf('system.') !== 0 && method.indexOf('aria2.') !== 0) {
+        method = 'aria2.' + method
+      }
+
+      const m = {
+        method,
+        'json-rpc': '2.0',
+        'id': this.lastId++
+      }
+
+      const params = this.secret ? ['token:' + this.secret] : []
+      if (Array.isArray(parameters)) {
+        params = params.concat(parameters)
+      }
+
+      if (params.length > 0) m.params = params
+
+      this.onsend(m)
+
+      return new Promise((resolve, reject) => {
+        // send via websocket
+        if (this.socket && this.socket.readyState === 1) {
+          this.socket.send(JSON.stringify(m))
+        // send via http
+        } else {
+          this.http(m).catch(reject)
+        }
+
+        this.callbacks[m.id] = [resolve, reject]
+      })
+    }
+
+    _onmessage (m) {
+      this.onmessage(m)
+
+      if (m.id !== undefined) {
+        const callback = this.callbacks[m.id]
+        if (callback) {
+          if (m.error) {
+            callback[1](m.error)
+          } else {
+            callback[0](m.result)
+          }
+          delete this.callbacks[m.id]
+        }
+      } else if (m.method) {
+        var n = m.method.split('aria2.')[1]
+        if (n.indexOf('on') === 0 && typeof this[n] === 'function' && Aria2.notifications.indexOf(n) > -1) {
+          this[n].apply(this, m.params)
+        }
+      }
+    }
+
+    open () {
+      const url = 'ws' + (this.secure ? 's' : '') + '://' + this.host + ':' + this.port + this.path
+      const socket = this.socket = new WebSocket(url)
+
+      socket.onclose = () => {
+        this.onclose()
+      }
+      socket.onmessage = (event) => {
+        this._onmessage(JSON.parse(event.data))
+      }
+
+      return new Promise((resolve, reject) => {
+        socket.onopen = function () {
+          resolve()
+          this.onopen()
+        }
+        socket.onerror = function (err) {
+          reject(err)
+        }
+      })
+    }
+
+    close () {
+      var socket = this.socket
+      return new Promise(function (resolve, reject) {
+        if (!socket) {
+          resolve()
+        } else {
+          socket.addEventListener('close', function () {
+            resolve()
+          })
+          socket.close()
+        }
+      })
+    }
   }
 
   // https://aria2.github.io/manual/en/html/aria2c.html#methods
@@ -262,7 +261,7 @@
   }
 
   Aria2.methods.forEach(function (method) {
-    var sufix = method.indexOf('.') > -1 ? method.split('.')[1] : method
+    const sufix = method.indexOf('.') > -1 ? method.split('.')[1] : method
     Aria2.prototype[sufix] = function (/* [param] [,param] [,...] */) {
       return this.send.apply(this, [method].concat(Array.prototype.slice.call(arguments)))
     }
